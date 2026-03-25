@@ -10,82 +10,86 @@ class MoodAnalyzer:
         self.sentiment_scores = []
         self.timestamps = []
     
-    def analyze_text(self, text):
-        """Analyze text input and extract sentiment score"""
-        blob = TextBlob(text)
-        sentiment_score = blob.sentiment.polarity
+    def add_mood_entry(self, text, timestamp=None):
+        """Add a new mood entry with automatic sentiment analysis"""
+        if timestamp is None:
+            timestamp = datetime.now()
+            
+        # Analyze sentiment using TextBlob
+        analysis = TextBlob(text)
+        sentiment_score = analysis.sentiment.polarity
+        
+        self.mood_data.append(text)
         self.sentiment_scores.append(sentiment_score)
-        self.timestamps.append(datetime.now())
-        return sentiment_score
+        self.timestamps.append(timestamp)
     
-    def get_mood_label(self, score):
-        """Convert sentiment score to mood label"""
-        if score >= 0.5:
-            return 'Very Happy'
-        elif score >= 0.1:
-            return 'Happy'
-        elif score > -0.1:
-            return 'Neutral'
-        elif score > -0.5:
-            return 'Sad'
-        else:
-            return 'Very Sad'
-    
-    def generate_trend_visualization(self, days=30):
-        """Generate mood trend visualization for specified time period"""
-        if not self.sentiment_scores:
+    def get_trend_analysis(self, days=30):
+        """Analyze mood trends over specified number of days"""
+        if not self.mood_data:
             return None
             
         df = pd.DataFrame({
             'timestamp': self.timestamps,
-            'sentiment': self.sentiment_scores
+            'sentiment': self.sentiment_scores,
+            'text': self.mood_data
         })
         
-        # Filter for specified time period
-        cutoff_date = datetime.now() - timedelta(days=days)
-        df = df[df['timestamp'] >= cutoff_date]
+        # Resample to daily averages
+        daily_avg = df.set_index('timestamp')\\
+                      .resample('D')['sentiment']\\
+                      .mean()\\
+                      .fillna(method='ffill')
         
-        # Calculate daily averages
-        daily_avg = df.resample('D', on='timestamp')['sentiment'].mean()
+        return daily_avg
+    
+    def visualize_mood_trend(self, days=30):
+        """Generate visualization of mood trends"""
+        trend_data = self.get_trend_analysis(days)
         
-        # Create visualization
+        if trend_data is None:
+            return None
+        
         plt.figure(figsize=(12, 6))
-        plt.plot(daily_avg.index, daily_avg.values, 'b-', linewidth=2)
-        plt.fill_between(daily_avg.index, daily_avg.values, alpha=0.3)
-        plt.axhline(y=0, color='r', linestyle='--', alpha=0.3)
+        plt.plot(trend_data.index, trend_data.values, 'b-', linewidth=2)
+        plt.fill_between(trend_data.index, trend_data.values, alpha=0.3)
         
-        plt.title('Your Mood Journey Over Time')
+        plt.title('Mood Trend Analysis')
         plt.xlabel('Date')
-        plt.ylabel('Mood Score')
-        plt.grid(True, alpha=0.3)
+        plt.ylabel('Sentiment Score')
+        plt.grid(True, linestyle='--', alpha=0.7)
         
-        # Add mood zone labels
-        plt.axhspan(0.5, 1.0, alpha=0.2, color='green', label='Very Happy')
-        plt.axhspan(0.1, 0.5, alpha=0.2, color='lightgreen', label='Happy')
-        plt.axhspan(-0.1, 0.1, alpha=0.2, color='gray', label='Neutral')
-        plt.axhspan(-0.5, -0.1, alpha=0.2, color='lightcoral', label='Sad')
-        plt.axhspan(-1.0, -0.5, alpha=0.2, color='red', label='Very Sad')
+        # Add trend line
+        z = np.polyfit(range(len(trend_data)), trend_data.values, 1)
+        p = np.poly1d(z)
+        plt.plot(trend_data.index, p(range(len(trend_data))), 'r--', alpha=0.8)
         
-        plt.legend()
+        plt.tight_layout()
         return plt
     
-    def get_mood_statistics(self):
-        """Calculate mood statistics"""
+    def get_mood_summary(self):
+        """Generate statistical summary of mood data"""
         if not self.sentiment_scores:
             return None
             
         return {
-            'average_mood': np.mean(self.sentiment_scores),
-            'mood_variance': np.var(self.sentiment_scores),
-            'most_common_mood': self.get_mood_label(np.median(self.sentiment_scores)),
-            'total_entries': len(self.sentiment_scores)
+            'average_sentiment': np.mean(self.sentiment_scores),
+            'sentiment_variance': np.var(self.sentiment_scores),
+            'total_entries': len(self.mood_data),
+            'most_positive': max(self.sentiment_scores),
+            'most_negative': min(self.sentiment_scores)
         }
     
-    def export_mood_data(self, filepath):
-        """Export mood data to CSV"""
+    def export_mood_data(self, format='csv'):
+        """Export mood data to specified format"""
         df = pd.DataFrame({
             'timestamp': self.timestamps,
-            'sentiment_score': self.sentiment_scores,
-            'mood_label': [self.get_mood_label(score) for score in self.sentiment_scores]
+            'sentiment': self.sentiment_scores,
+            'text': self.mood_data
         })
-        df.to_csv(filepath, index=False)
+        
+        if format == 'csv':
+            return df.to_csv(index=False)
+        elif format == 'json':
+            return df.to_json(orient='records')
+        else:
+            raise ValueError('Unsupported export format')
